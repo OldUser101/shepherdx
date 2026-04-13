@@ -1,0 +1,175 @@
+use std::{io::Cursor, path::PathBuf};
+
+use axum::{
+    Router,
+    extract::{DefaultBodyLimit, Multipart, multipart::Field},
+    http::StatusCode,
+    routing::post,
+};
+use fs_extra::dir::CopyOptions;
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
+use tracing::info;
+use zip::ZipArchive;
+
+use crate::error::{ShepherdError, ShepherdResult};
+
+const USER_CUR_DIR: &str = "/var/shepherd/usercode/current";
+const TEAM_IMAGE: &str = "/var/shepherd/team_logo.jpg";
+
+async fn process_python(mut field: Field<'_>) -> ShepherdResult<()> {
+    let file_name = field.file_name().ok_or(ShepherdError(
+        StatusCode::BAD_REQUEST,
+        "File name not specified".to_string(),
+    ))?;
+
+    let target = PathBuf::from(USER_CUR_DIR).join(file_name);
+    let mut f = fs::File::create(&target).await?;
+    let mut file_size = 0;
+
+    info!("uploading python '{}'", file_name);
+
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        f.write_all(&chunk).await?;
+        file_size += chunk.len();
+    }
+
+    info!("uploaded {} bytes", file_size);
+
+    Ok(())
+}
+
+async fn process_zip(mut field: Field<'_>) -> ShepherdResult<()> {
+    let file_name = field.file_name().ok_or(ShepherdError(
+        StatusCode::BAD_REQUEST,
+        "File name not specified".to_string(),
+    ))?;
+
+    let mut buffer = Vec::new();
+    let mut file_size = 0;
+
+    info!("uploading zip '{}'", file_name);
+
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        file_size += chunk.len();
+        buffer.extend_from_slice(&chunk);
+    }
+
+    info!("uploaded {} bytes", file_size);
+
+    let reader = Cursor::new(buffer);
+    let mut archive = ZipArchive::new(reader)
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let tmpdir = tempfile::tempdir()?;
+    archive
+        .extract(tmpdir.path())
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    if !tmpdir.path().join("main.py").is_file() {
+        return Err(ShepherdError(
+            StatusCode::BAD_REQUEST,
+            "Uploaded ZIP file has no entrypoint".to_string(),
+        ));
+    }
+
+    let _ = fs::remove_dir_all(USER_CUR_DIR).await;
+
+    tokio::task::spawn_blocking(move || {
+        let mut options = CopyOptions::new();
+        options.copy_inside = true;
+        fs_extra::dir::copy(tmpdir.path(), USER_CUR_DIR, &options)
+    })
+    .await
+    .map_err(|e| ShepherdError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| ShepherdError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    info!("uploaded new usercode from zip");
+
+    Ok(())
+}
+
+async fn upload_file(mut multipart: Multipart) -> ShepherdResult<()> {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        match (field.content_type(), field.file_name()) {
+            (Some(content_type), Some(file_name)) => {
+                if content_type.starts_with("text") || file_name.ends_with(".py") {
+                    process_python(field).await?
+                } else if content_type.contains("zip") {
+                    process_zip(field).await?
+                } else {
+                    return Err(ShepherdError(
+                        StatusCode::BAD_REQUEST,
+                        format!("{} has an invalid content type", file_name),
+                    ));
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(())
+}
+
+async fn process_team_image(mut field: Field<'_>) -> ShepherdResult<()> {
+    let target = PathBuf::from(TEAM_IMAGE);
+    let mut f = fs::File::create(&target).await?;
+    let mut file_size = 0;
+
+    info!("uploading team image");
+
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        f.write_all(&chunk).await?;
+        file_size += chunk.len();
+    }
+
+    info!("uploaded {} bytes", file_size);
+
+    Ok(())
+}
+
+async fn upload_team_image(mut multipart: Multipart) -> ShepherdResult<()> {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| ShepherdError(StatusCode::BAD_REQUEST, e.to_string()))?
+    {
+        match field.content_type() {
+            Some(content_type) => {
+                if content_type.contains("jpeg") {
+                    process_team_image(field).await?
+                } else {
+                    return Err(ShepherdError(
+                        StatusCode::BAD_REQUEST,
+                        "file has an invalid content type".to_string(),
+                    ));
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(())
+}
+
+pub fn router() -> Router {
+    Router::new()
+        .route("/file", post(upload_file))
+        .route("/team-image", post(upload_team_image))
+        .layer(DefaultBodyLimit::disable())
+}
