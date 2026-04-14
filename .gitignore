@@ -1,3 +1,26 @@
+# Cargo
 target/
+
+# Shepherd usercode
+user/projects/
+user/current/
+user/team_logo.jpg
+
+# Docs + Sheep static files
+static/docs/*
+!static/docs/README.md
+static/editor/*
+!static/editor/README.md
+
+# Testing files
+test.png
+test.jpg
+test.py
+test.txt
+test.zip
+
+# direnv
 .direnv/
+
+# Nix
 result

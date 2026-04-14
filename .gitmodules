@@ -1,0 +1,8 @@
+[submodule "sheep"]
+	path = sheep
+	url = git@github.com:systemetric/sheep.git
+	branch = new-shepherd
+[submodule "docs.robocon.uk"]
+	path = docs.robocon.uk
+	url = git@github.com:systemetric/docs.robocon.uk
+	branch = new-shepherd
