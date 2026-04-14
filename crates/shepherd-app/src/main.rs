@@ -2,13 +2,15 @@ use anyhow::Result;
 use axum::Router;
 use shepherd_mqtt::MqttClient;
 use tokio::net::TcpListener;
-use tower_http::trace::TraceLayer;
+use tower::ServiceBuilder;
+use tower_http::{services::fs::ServeDir, trace::TraceLayer};
 use tracing::Level;
 
 mod error;
 mod files;
 mod upload;
 
+const STATIC_DIR: &str = "/var/shepherd/static";
 const SERVICE_ID: &str = "shepherd-app";
 
 async fn _main() -> Result<()> {
@@ -17,6 +19,15 @@ async fn _main() -> Result<()> {
     let app = Router::new()
         .nest("/files", files::router())
         .nest("/upload", upload::router())
+        .nest_service(
+            "/docs",
+            ServiceBuilder::new().service(ServeDir::new(format!("{STATIC_DIR}/docs"))),
+        )
+        .nest_service(
+            "/editor",
+            ServiceBuilder::new().service(ServeDir::new(format!("{STATIC_DIR}/editor"))),
+        )
+        .fallback_service(ServiceBuilder::new().service(ServeDir::new(STATIC_DIR)))
         .layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
