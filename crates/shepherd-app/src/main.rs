@@ -19,14 +19,6 @@ async fn _main() -> Result<()> {
     let app = Router::new()
         .nest("/files", files::router())
         .nest("/upload", upload::router())
-        .nest_service(
-            "/docs",
-            ServiceBuilder::new().service(ServeDir::new(format!("{STATIC_DIR}/docs"))),
-        )
-        .nest_service(
-            "/editor",
-            ServiceBuilder::new().service(ServeDir::new(format!("{STATIC_DIR}/editor"))),
-        )
         .fallback_service(ServiceBuilder::new().service(ServeDir::new(STATIC_DIR)))
         .layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
