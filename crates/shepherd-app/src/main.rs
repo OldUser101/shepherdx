@@ -6,6 +6,7 @@ use tower::ServiceBuilder;
 use tower_http::{services::fs::ServeDir, trace::TraceLayer};
 use tracing::Level;
 
+mod control;
 mod error;
 mod files;
 mod upload;
@@ -14,16 +15,18 @@ const STATIC_DIR: &str = "/var/shepherd/static";
 const SERVICE_ID: &str = "shepherd-app";
 
 async fn _main() -> Result<()> {
-    let mut mqttc = MqttClient::new(SERVICE_ID.to_string(), "localhost".to_string(), 1883);
+    let (client, mut event_loop) =
+        MqttClient::new(SERVICE_ID.to_string(), "localhost".to_string(), 1883);
 
     let app = Router::new()
+        .nest("/control", control::router(client))
         .nest("/files", files::router())
         .nest("/upload", upload::router())
         .fallback_service(ServiceBuilder::new().service(ServeDir::new(STATIC_DIR)))
         .layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
-    let (r0, r1) = tokio::join!(axum::serve(listener, app), mqttc.run());
+    let (r0, r1) = tokio::join!(axum::serve(listener, app), event_loop.run());
 
     // this is actually horrid
     r0?;

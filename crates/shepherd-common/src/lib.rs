@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-#[repr(u64)]
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Zone {
     #[default]
     Red = 0,
