@@ -1,7 +1,7 @@
 use anyhow::Result;
 use shepherd_common::config::Config;
 use shepherd_mqtt::{MqttAsyncClient, MqttClient, MqttEventLoop};
-use tokio_gpiod::{Bias, Chip, Input, Lines, Options};
+use tokio_gpiod::{Bias, Chip, EdgeDetect, Input, Lines, Options};
 use tracing::warn;
 
 pub struct Runner {
@@ -16,7 +16,7 @@ impl Runner {
     async fn setup_gpio(config: &Config) -> Result<(Chip, Lines<Input>)> {
         let chip = Chip::new(config.run.gpio_device.clone()).await?;
         let opts = Options::input([config.run.start_button])
-            .edge(tokio_gpiod::EdgeDetect::Falling)
+            .edge(EdgeDetect::Falling)
             .bias(Bias::PullUp)
             .consumer(config.run.service_id.clone());
         let lines = chip.request_lines(opts).await?;
