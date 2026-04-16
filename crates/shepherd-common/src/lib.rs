@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub mod config;
+
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RunState {

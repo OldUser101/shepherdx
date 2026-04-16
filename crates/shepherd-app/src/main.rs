@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum::Router;
+use shepherd_common::config::Config;
 use shepherd_mqtt::MqttClient;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
@@ -11,20 +12,19 @@ mod error;
 mod files;
 mod upload;
 
-const STATIC_DIR: &str = "/var/shepherd/static";
-const SERVICE_ID: &str = "shepherd-app";
-
 async fn _main() -> Result<()> {
+    let config = Config::from_file(None).unwrap_or_default();
+
     let (client, mut event_loop) =
-        MqttClient::new(SERVICE_ID.to_string(), "localhost".to_string(), 1883);
+        MqttClient::new(config.app.service_id, config.mqtt.broker, config.mqtt.port);
 
     let app = Router::new()
         .nest("/control", control::router(client))
         .nest("/files", files::router())
         .nest("/upload", upload::router())
-        .fallback_service(ServiceBuilder::new().service(ServeDir::new(STATIC_DIR)))
+        .fallback_service(ServiceBuilder::new().service(ServeDir::new(config.app.static_dir)))
         .layer(TraceLayer::new_for_http());
-    let listener = TcpListener::bind("0.0.0.0:8080").await?;
+    let listener = TcpListener::bind(format!("{}:{}", config.app.host, config.app.port)).await?;
 
     tokio::select!(
         res = axum::serve(listener, app) => {

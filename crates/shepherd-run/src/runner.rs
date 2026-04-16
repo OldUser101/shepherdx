@@ -1,13 +1,11 @@
 use anyhow::Result;
+use shepherd_common::config::Config;
 use shepherd_mqtt::{MqttAsyncClient, MqttClient, MqttEventLoop};
 use tokio_gpiod::{Bias, Chip, Input, Lines, Options};
 use tracing::warn;
 
-const SERVICE_ID: &str = "shepherd-run";
-const GPIO_CHIP: &str = "gpiochip0";
-const START_BUTTON_PIN: u32 = 26;
-
 pub struct Runner {
+    config: Config,
     mqtt_client: MqttAsyncClient,
     mqtt_event_loop: MqttEventLoop,
     gpio_chip: Option<Chip>,
@@ -15,21 +13,26 @@ pub struct Runner {
 }
 
 impl Runner {
-    async fn setup_gpio() -> Result<(Chip, Lines<Input>)> {
-        let chip = Chip::new(GPIO_CHIP).await?;
-        let opts = Options::input([START_BUTTON_PIN])
+    async fn setup_gpio(config: &Config) -> Result<(Chip, Lines<Input>)> {
+        let chip = Chip::new(config.run.gpio_device.clone()).await?;
+        let opts = Options::input([config.run.start_button])
             .edge(tokio_gpiod::EdgeDetect::Falling)
             .bias(Bias::PullUp)
-            .consumer(SERVICE_ID);
+            .consumer(config.run.service_id.clone());
         let lines = chip.request_lines(opts).await?;
         Ok((chip, lines))
     }
 
     pub async fn new() -> Self {
-        let (mqtt_client, mqtt_event_loop) =
-            MqttClient::new(SERVICE_ID.to_string(), "localhost".to_string(), 1883);
+        let config = Config::from_file(None).unwrap_or_default();
 
-        let (gpio_chip, gpio_lines) = match Self::setup_gpio().await {
+        let (mqtt_client, mqtt_event_loop) = MqttClient::new(
+            config.run.service_id.clone(),
+            config.mqtt.broker.clone(),
+            config.mqtt.port,
+        );
+
+        let (gpio_chip, gpio_lines) = match Self::setup_gpio(&config).await {
             Ok((chip, line)) => (Some(chip), Some(line)),
             Err(e) => {
                 warn!("gpio setup failed: {e}");
@@ -38,6 +41,7 @@ impl Runner {
         };
 
         Self {
+            config,
             mqtt_client,
             mqtt_event_loop,
             gpio_chip,
