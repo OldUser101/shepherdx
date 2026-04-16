@@ -15,13 +15,16 @@ mod upload;
 async fn _main() -> Result<()> {
     let config = Config::from_file(None).unwrap_or_default();
 
-    let (client, mut event_loop) =
-        MqttClient::new(config.app.service_id, config.mqtt.broker, config.mqtt.port);
+    let (client, mut event_loop) = MqttClient::new(
+        config.app.service_id.clone(),
+        config.mqtt.broker.clone(),
+        config.mqtt.port,
+    );
 
     let app = Router::new()
-        .nest("/control", control::router(client))
-        .nest("/files", files::router())
-        .nest("/upload", upload::router())
+        .nest("/control", control::router(&config, client))
+        .nest("/files", files::router(&config))
+        .nest("/upload", upload::router(&config))
         .fallback_service(ServiceBuilder::new().service(ServeDir::new(config.app.static_dir)))
         .layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind(format!("{}:{}", config.app.host, config.app.port)).await?;

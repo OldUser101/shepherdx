@@ -3,18 +3,22 @@ use std::path::PathBuf;
 use axum::{
     Json, Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, Path},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
     routing::{delete, get, post},
 };
 use serde::Serialize;
 use serde_json::json;
+use shepherd_common::config::Config;
 use tokio::fs;
 use tracing::info;
 
 use crate::error::{ShepherdError, ShepherdResult};
 
-const USER_SRC_DIR: &str = "/var/shepherd/usercode/projects";
+#[derive(Debug, Clone)]
+struct FilesState {
+    user_src_dir: String,
+}
 
 type Blocks = serde_json::Value;
 
@@ -25,8 +29,8 @@ struct ProjectMeta {
 }
 
 impl ProjectMeta {
-    async fn load() -> ShepherdResult<Self> {
-        let blocks_path = PathBuf::from(USER_SRC_DIR).join("blocks.json");
+    async fn load(state: FilesState) -> ShepherdResult<Self> {
+        let blocks_path = PathBuf::from(&state.user_src_dir).join("blocks.json");
         let blocks = if blocks_path.is_file() {
             let blocks_str = fs::read_to_string(&blocks_path).await?;
             serde_json::from_str(&blocks_str).map_err(|_| {
@@ -44,7 +48,7 @@ impl ProjectMeta {
             })
         };
 
-        let files: Vec<String> = std::fs::read_dir(USER_SRC_DIR)?
+        let files: Vec<String> = std::fs::read_dir(&state.user_src_dir)?
             .filter_map(|p| {
                 let path = p.ok()?.path();
 
@@ -64,8 +68,8 @@ impl ProjectMeta {
     }
 }
 
-async fn list_projects() -> ShepherdResult<Json<ProjectMeta>> {
-    ProjectMeta::load().await.map(Json)
+async fn list_projects(State(state): State<FilesState>) -> ShepherdResult<Json<ProjectMeta>> {
+    ProjectMeta::load(state).await.map(Json)
 }
 
 #[derive(Serialize)]
@@ -82,8 +86,8 @@ impl Project {
         }
     }
 
-    async fn load(name: String) -> ShepherdResult<Self> {
-        let target = PathBuf::from(USER_SRC_DIR).join(&name);
+    async fn load(state: FilesState, name: String) -> ShepherdResult<Self> {
+        let target = PathBuf::from(state.user_src_dir).join(&name);
         let content = fs::read_to_string(target).await?;
 
         info!("loaded '{}' size {} bytes", &name, content.len());
@@ -94,8 +98,8 @@ impl Project {
         })
     }
 
-    async fn save(&self) -> ShepherdResult<()> {
-        let target = PathBuf::from(USER_SRC_DIR).join(&self.filename);
+    async fn save(&self, state: FilesState) -> ShepherdResult<()> {
+        let target = PathBuf::from(state.user_src_dir).join(&self.filename);
         fs::write(target, &self.content).await?;
         info!(
             "saved '{}' size {} bytes",
@@ -106,17 +110,27 @@ impl Project {
     }
 }
 
-async fn load_file(Path(name): Path<String>) -> ShepherdResult<Json<Project>> {
-    Project::load(name).await.map(Json)
+async fn load_file(
+    State(state): State<FilesState>,
+    Path(name): Path<String>,
+) -> ShepherdResult<Json<Project>> {
+    Project::load(state, name).await.map(Json)
 }
 
-async fn save_file(Path(name): Path<String>, body: Bytes) -> ShepherdResult<()> {
+async fn save_file(
+    State(state): State<FilesState>,
+    Path(name): Path<String>,
+    body: Bytes,
+) -> ShepherdResult<()> {
     let content = String::from_utf8(body.to_vec())
         .map_err(|_| ShepherdError(StatusCode::BAD_REQUEST, "Invalid UTF-8".to_string()))?;
-    Project::new(name, content).save().await
+    Project::new(name, content).save(state).await
 }
 
-async fn delete_file(Path(name): Path<String>) -> ShepherdResult<()> {
+async fn delete_file(
+    State(state): State<FilesState>,
+    Path(name): Path<String>,
+) -> ShepherdResult<()> {
     if name == "blocks.json" {
         return Err(ShepherdError(
             StatusCode::BAD_REQUEST,
@@ -124,7 +138,7 @@ async fn delete_file(Path(name): Path<String>) -> ShepherdResult<()> {
         ));
     }
 
-    let target = PathBuf::from(USER_SRC_DIR).join(&name);
+    let target = PathBuf::from(state.user_src_dir).join(&name);
 
     fs::remove_file(&target).await?;
 
@@ -133,7 +147,7 @@ async fn delete_file(Path(name): Path<String>) -> ShepherdResult<()> {
     Ok(())
 }
 
-pub fn router() -> Router {
+pub fn router(config: &Config) -> Router {
     Router::new()
         .route("/list", get(list_projects))
         .route("/load/{filename}", get(load_file))
@@ -142,4 +156,7 @@ pub fn router() -> Router {
             post(save_file).layer(DefaultBodyLimit::disable()),
         )
         .route("/delete/{filename}", delete(delete_file))
+        .with_state(FilesState {
+            user_src_dir: config.app.user_src_dir.clone(),
+        })
 }

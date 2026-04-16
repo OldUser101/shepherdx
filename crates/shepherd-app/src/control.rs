@@ -1,6 +1,6 @@
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
 use serde::{Deserialize, Serialize};
-use shepherd_common::{Mode, Zone};
+use shepherd_common::{Mode, Zone, config::Config};
 use shepherd_mqtt::{
     MqttAsyncClient,
     messages::{ControlMessage, ControlMessageType},
@@ -11,6 +11,7 @@ use crate::error::{ShepherdError, ShepherdResult};
 #[derive(Clone)]
 struct ControlState {
     mqttc: MqttAsyncClient,
+    robot_control: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ async fn start(
 
     state
         .mqttc
-        .publish("robot/control".to_string(), msg)
+        .publish(state.robot_control, msg)
         .await
         .map_err(|e| {
             ShepherdError(
@@ -52,7 +53,7 @@ async fn stop(State(mut state): State<ControlState>) -> ShepherdResult<()> {
 
     state
         .mqttc
-        .publish("robot/control".to_string(), msg)
+        .publish(state.robot_control, msg)
         .await
         .map_err(|e| {
             ShepherdError(
@@ -64,9 +65,12 @@ async fn stop(State(mut state): State<ControlState>) -> ShepherdResult<()> {
     Ok(())
 }
 
-pub fn router(mqttc: MqttAsyncClient) -> Router {
+pub fn router(config: &Config, mqttc: MqttAsyncClient) -> Router {
     Router::new()
         .route("/start", post(start))
         .route("/stop", post(stop))
-        .with_state(ControlState { mqttc })
+        .with_state(ControlState {
+            mqttc,
+            robot_control: config.channel.robot_control.clone(),
+        })
 }

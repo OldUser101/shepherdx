@@ -10,6 +10,7 @@ pub struct Config {
     pub mqtt: MqttConfig,
     pub app: AppConfig,
     pub run: RunConfig,
+    pub channel: ChannelConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,6 +47,12 @@ pub struct AppConfig {
     pub port: u16,
     #[serde(default = "default_app_static_dir")]
     pub static_dir: String,
+    #[serde(default = "default_app_user_src_dir")]
+    pub user_src_dir: String,
+    #[serde(default = "default_app_user_cur_dir")]
+    pub user_cur_dir: String,
+    #[serde(default = "default_app_team_image")]
+    pub team_image: String,
 }
 
 fn default_app_service_id() -> String {
@@ -60,6 +67,15 @@ fn default_app_port() -> u16 {
 fn default_app_static_dir() -> String {
     "/var/shepherd/static".to_string()
 }
+fn default_app_user_src_dir() -> String {
+    "/var/shapherd/usercode/projects".to_string()
+}
+fn default_app_user_cur_dir() -> String {
+    "/var/shapherd/usercode/current".to_string()
+}
+fn default_app_team_image() -> String {
+    "/var/shepherd/team-image.jpg".to_string()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -68,6 +84,9 @@ impl Default for AppConfig {
             host: default_app_host(),
             port: default_app_port(),
             static_dir: default_app_static_dir(),
+            user_src_dir: default_app_user_src_dir(),
+            user_cur_dir: default_app_user_cur_dir(),
+            team_image: default_app_team_image(),
         }
     }
 }
@@ -98,6 +117,24 @@ impl Default for RunConfig {
             service_id: default_run_service_id(),
             start_button: default_run_start_button(),
             gpio_device: default_run_gpio_device(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelConfig {
+    #[serde(default = "default_channel_robot_control")]
+    pub robot_control: String,
+}
+
+fn default_channel_robot_control() -> String {
+    "robot/control".to_string()
+}
+
+impl Default for ChannelConfig {
+    fn default() -> Self {
+        Self {
+            robot_control: default_channel_robot_control(),
         }
     }
 }

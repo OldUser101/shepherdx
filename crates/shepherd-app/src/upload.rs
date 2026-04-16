@@ -2,11 +2,12 @@ use std::{io::Cursor, path::PathBuf};
 
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, Multipart, multipart::Field},
+    extract::{DefaultBodyLimit, Multipart, State, multipart::Field},
     http::StatusCode,
     routing::post,
 };
 use fs_extra::dir::CopyOptions;
+use shepherd_common::config::Config;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::info;
@@ -14,16 +15,19 @@ use zip::ZipArchive;
 
 use crate::error::{ShepherdError, ShepherdResult};
 
-const USER_CUR_DIR: &str = "/var/shepherd/usercode/current";
-const TEAM_IMAGE: &str = "/var/shepherd/team_logo.jpg";
+#[derive(Debug, Clone)]
+struct UploadState {
+    user_cur_dir: String,
+    team_image: String,
+}
 
-async fn process_python(mut field: Field<'_>) -> ShepherdResult<()> {
+async fn process_python(state: UploadState, mut field: Field<'_>) -> ShepherdResult<()> {
     let file_name = field.file_name().ok_or(ShepherdError(
         StatusCode::BAD_REQUEST,
         "File name not specified".to_string(),
     ))?;
 
-    let target = PathBuf::from(USER_CUR_DIR).join(file_name);
+    let target = PathBuf::from(&state.user_cur_dir).join(file_name);
     let mut f = fs::File::create(&target).await?;
     let mut file_size = 0;
 
@@ -43,7 +47,7 @@ async fn process_python(mut field: Field<'_>) -> ShepherdResult<()> {
     Ok(())
 }
 
-async fn process_zip(mut field: Field<'_>) -> ShepherdResult<()> {
+async fn process_zip(state: UploadState, mut field: Field<'_>) -> ShepherdResult<()> {
     let file_name = field.file_name().ok_or(ShepherdError(
         StatusCode::BAD_REQUEST,
         "File name not specified".to_string(),
@@ -80,12 +84,12 @@ async fn process_zip(mut field: Field<'_>) -> ShepherdResult<()> {
         ));
     }
 
-    let _ = fs::remove_dir_all(USER_CUR_DIR).await;
+    let _ = fs::remove_dir_all(&state.user_cur_dir).await;
 
     tokio::task::spawn_blocking(move || {
         let mut options = CopyOptions::new();
         options.copy_inside = true;
-        fs_extra::dir::copy(tmpdir.path(), USER_CUR_DIR, &options)
+        fs_extra::dir::copy(tmpdir.path(), &state.user_cur_dir, &options)
     })
     .await
     .map_err(|e| ShepherdError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -96,7 +100,10 @@ async fn process_zip(mut field: Field<'_>) -> ShepherdResult<()> {
     Ok(())
 }
 
-async fn upload_file(mut multipart: Multipart) -> ShepherdResult<()> {
+async fn upload_file(
+    State(state): State<UploadState>,
+    mut multipart: Multipart,
+) -> ShepherdResult<()> {
     while let Some(field) = multipart
         .next_field()
         .await
@@ -105,9 +112,9 @@ async fn upload_file(mut multipart: Multipart) -> ShepherdResult<()> {
         match (field.content_type(), field.file_name()) {
             (Some(content_type), Some(file_name)) => {
                 if content_type.starts_with("text") || file_name.ends_with(".py") {
-                    process_python(field).await?
+                    process_python(state.clone(), field).await?
                 } else if content_type.contains("zip") {
-                    process_zip(field).await?
+                    process_zip(state.clone(), field).await?
                 } else {
                     return Err(ShepherdError(
                         StatusCode::BAD_REQUEST,
@@ -122,8 +129,8 @@ async fn upload_file(mut multipart: Multipart) -> ShepherdResult<()> {
     Ok(())
 }
 
-async fn process_team_image(mut field: Field<'_>) -> ShepherdResult<()> {
-    let target = PathBuf::from(TEAM_IMAGE);
+async fn process_team_image(state: &UploadState, mut field: Field<'_>) -> ShepherdResult<()> {
+    let target = PathBuf::from(state.team_image.clone());
     let mut f = fs::File::create(&target).await?;
     let mut file_size = 0;
 
@@ -143,7 +150,10 @@ async fn process_team_image(mut field: Field<'_>) -> ShepherdResult<()> {
     Ok(())
 }
 
-async fn upload_team_image(mut multipart: Multipart) -> ShepherdResult<()> {
+async fn upload_team_image(
+    State(state): State<UploadState>,
+    mut multipart: Multipart,
+) -> ShepherdResult<()> {
     while let Some(field) = multipart
         .next_field()
         .await
@@ -152,7 +162,7 @@ async fn upload_team_image(mut multipart: Multipart) -> ShepherdResult<()> {
         match field.content_type() {
             Some(content_type) => {
                 if content_type.contains("jpeg") {
-                    process_team_image(field).await?
+                    process_team_image(&state, field).await?
                 } else {
                     return Err(ShepherdError(
                         StatusCode::BAD_REQUEST,
@@ -167,9 +177,13 @@ async fn upload_team_image(mut multipart: Multipart) -> ShepherdResult<()> {
     Ok(())
 }
 
-pub fn router() -> Router {
+pub fn router(config: &Config) -> Router {
     Router::new()
         .route("/file", post(upload_file))
         .route("/team-image", post(upload_team_image))
         .layer(DefaultBodyLimit::disable())
+        .with_state(UploadState {
+            user_cur_dir: config.app.user_cur_dir.clone(),
+            team_image: config.app.team_image.clone(),
+        })
 }
