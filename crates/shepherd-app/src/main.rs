@@ -4,7 +4,7 @@ use shepherd_mqtt::MqttClient;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{services::fs::ServeDir, trace::TraceLayer};
-use tracing::Level;
+use tracing::{Level, warn};
 
 mod control;
 mod error;
@@ -26,11 +26,16 @@ async fn _main() -> Result<()> {
         .layer(TraceLayer::new_for_http());
     let listener = TcpListener::bind("0.0.0.0:8080").await?;
 
-    let (r0, r1) = tokio::join!(axum::serve(listener, app), event_loop.run());
-
-    // this is actually horrid
-    r0?;
-    r1?;
+    tokio::select!(
+        res = axum::serve(listener, app) => {
+            warn!("server exited: {:#?}", res);
+            res?
+        }
+        res = event_loop.run() => {
+            warn!("mqtt client exited: {:#?}", res);
+            res?
+        }
+    );
 
     Ok(())
 }

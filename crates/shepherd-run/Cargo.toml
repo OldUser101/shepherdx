@@ -1,0 +1,19 @@
+[package]
+name = "shepherd-run"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-gpiod.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+shepherd-common = { path = "../shepherd-common" }
+shepherd-mqtt = { path = "../shepherd-mqtt" }

@@ -2,12 +2,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum RunState {
+    #[default]
+    Init,
+    Ready,
+    Running,
+    PostRun,
+}
+
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Zone {
     #[default]
-    Red = 0,
-    Yellow = 1,
-    Blue = 2,
-    Green = 3,
+    Red,
+    Yellow,
+    Blue,
+    Green,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
