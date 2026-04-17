@@ -17,8 +17,8 @@ use crate::error::{ShepherdError, ShepherdResult};
 
 #[derive(Debug, Clone)]
 struct UploadState {
-    user_cur_dir: String,
-    team_image: String,
+    user_cur_dir: PathBuf,
+    team_image: PathBuf,
 }
 
 async fn process_python(state: UploadState, mut field: Field<'_>) -> ShepherdResult<()> {
@@ -27,7 +27,7 @@ async fn process_python(state: UploadState, mut field: Field<'_>) -> ShepherdRes
         "File name not specified".to_string(),
     ))?;
 
-    let target = PathBuf::from(&state.user_cur_dir).join(file_name);
+    let target = state.user_cur_dir.join(file_name);
     let mut f = fs::File::create(&target).await?;
     let mut file_size = 0;
 
@@ -130,8 +130,7 @@ async fn upload_file(
 }
 
 async fn process_team_image(state: &UploadState, mut field: Field<'_>) -> ShepherdResult<()> {
-    let target = PathBuf::from(state.team_image.clone());
-    let mut f = fs::File::create(&target).await?;
+    let mut f = fs::File::create(&state.team_image).await?;
     let mut file_size = 0;
 
     info!("uploading team image");
@@ -183,7 +182,7 @@ pub fn router(config: &Config) -> Router {
         .route("/team-image", post(upload_team_image))
         .layer(DefaultBodyLimit::disable())
         .with_state(UploadState {
-            user_cur_dir: config.app.user_cur_dir.clone(),
-            team_image: config.app.team_image.clone(),
+            user_cur_dir: config.path.user_cur_dir.clone(),
+            team_image: config.path.team_image.clone(),
         })
 }

@@ -17,7 +17,7 @@ use crate::error::{ShepherdError, ShepherdResult};
 
 #[derive(Debug, Clone)]
 struct FilesState {
-    user_src_dir: String,
+    user_src_dir: PathBuf,
 }
 
 type Blocks = serde_json::Value;
@@ -30,7 +30,7 @@ struct ProjectMeta {
 
 impl ProjectMeta {
     async fn load(state: FilesState) -> ShepherdResult<Self> {
-        let blocks_path = PathBuf::from(&state.user_src_dir).join("blocks.json");
+        let blocks_path = state.user_src_dir.join("blocks.json");
         let blocks = if blocks_path.is_file() {
             let blocks_str = fs::read_to_string(&blocks_path).await?;
             serde_json::from_str(&blocks_str).map_err(|_| {
@@ -87,7 +87,7 @@ impl Project {
     }
 
     async fn load(state: FilesState, name: String) -> ShepherdResult<Self> {
-        let target = PathBuf::from(state.user_src_dir).join(&name);
+        let target = state.user_src_dir.join(&name);
         let content = fs::read_to_string(target).await?;
 
         info!("loaded '{}' size {} bytes", &name, content.len());
@@ -99,7 +99,7 @@ impl Project {
     }
 
     async fn save(&self, state: FilesState) -> ShepherdResult<()> {
-        let target = PathBuf::from(state.user_src_dir).join(&self.filename);
+        let target = state.user_src_dir.join(&self.filename);
         fs::write(target, &self.content).await?;
         info!(
             "saved '{}' size {} bytes",
@@ -138,7 +138,7 @@ async fn delete_file(
         ));
     }
 
-    let target = PathBuf::from(state.user_src_dir).join(&name);
+    let target = state.user_src_dir.join(&name);
 
     fs::remove_file(&target).await?;
 

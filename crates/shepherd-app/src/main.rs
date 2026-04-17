@@ -15,6 +15,10 @@ mod upload;
 async fn _main() -> Result<()> {
     let config = Config::from_file(None).unwrap_or_default();
 
+    // server relies on several directories being present
+    // TODO: create them as needed later?
+    config.setup_dirs()?;
+
     let (client, mut event_loop) = MqttClient::new(
         &config.app.service_id,
         &config.mqtt.broker,

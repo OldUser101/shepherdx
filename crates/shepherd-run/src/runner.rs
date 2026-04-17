@@ -5,7 +5,10 @@ use shepherd_mqtt::{
     messages::{ControlMessage, ControlMessageType, RunStatusMessage},
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::{
+    fs,
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+};
 use tokio_gpiod::{Bias, Chip, EdgeDetect, Input, Lines, Options};
 use tracing::{info, warn};
 
@@ -39,12 +42,30 @@ impl Runner {
         Self {
             config,
             state: RunState::Init,
-            target_mode: Mode::default(),
-            target_zone: Zone::default(),
+            target_mode: Mode::Dev,
+            target_zone: Zone::from_id(0),
         }
     }
 
-    async fn state_init(&mut self) -> Result<()> {
+    async fn reset_state(&mut self) {
+        self.target_mode = Mode::Dev;
+        self.target_zone = Zone::from_id(0);
+        // TODO: reset hardware here (shell script?)
+    }
+
+    /// Copy start image to temporary location for websockets
+    async fn load_start_image(&self) -> Result<()> {
+        let start_image = if self.config.path.team_image.is_file() {
+            &self.config.path.team_image
+        } else if self.config.path.game_image.is_file() {
+            &self.config.path.game_image
+        } else {
+            warn!("no start image found, not creating tmp graphic!");
+            return Ok(());
+        };
+
+        fs::copy(start_image, self.config.path.tmp_root.join("image.jpg")).await?;
+
         Ok(())
     }
 
@@ -95,7 +116,11 @@ impl Runner {
 
                     // call handler functions for state transitions
                     match next {
-                        RunState::Init => self.state_init().await,
+                        RunState::Init => {
+                            // Init only ever runs once
+                            warn!("cannot transition to Init state");
+                            continue;
+                        }
                         RunState::Ready => self.state_ready().await,
                         RunState::Running => self.state_running().await,
                         RunState::PostRun => self.state_post_run().await,
@@ -142,7 +167,7 @@ impl Runner {
                 info!("gpio start detected");
                 last_event = event.time;
 
-                let arena_usb = PathBuf::from(&config.arena_usb);
+                let arena_usb = PathBuf::from(&config.path.arena_usb);
 
                 // pull zone info from arena usb
                 let zone = if arena_usb.join("zone1.txt").is_file() {
@@ -152,6 +177,7 @@ impl Runner {
                 } else if arena_usb.join("zone3.txt").is_file() {
                     Zone::from_id(3)
                 } else {
+                    // default to zone 0 always
                     Zone::from_id(0)
                 };
 
@@ -163,6 +189,13 @@ impl Runner {
 
     /// Final setup & event dispatch loops
     pub async fn run(&mut self) -> Result<()> {
+        // destroy previous sessions, if any
+        self.state = RunState::Init;
+        self.reset_state().await;
+
+        // set up configured directories
+        self.config.setup_dirs()?;
+
         let (state_sender, state_receiver) = mpsc::unbounded_channel();
 
         let (mut mqtt_client, mut mqtt_event_loop) = MqttClient::new(
@@ -170,6 +203,9 @@ impl Runner {
             &self.config.mqtt.broker,
             self.config.mqtt.port,
         );
+
+        // transition immediately into ready when dispatch starts later
+        state_sender.send(StateEvent::Transition(RunState::Ready, RunState::Init))?;
 
         // setup mqtt receiver for control events
         let mqtt_state_sender = state_sender.clone();
@@ -189,10 +225,16 @@ impl Runner {
         match Self::setup_gpio(&self.config).await {
             // we don't care about joining later, task runs anyway
             Ok((_, lines)) => std::mem::drop(tokio::task::spawn(async move {
-                Self::dispatch_gpio(gpio_config, lines, state_sender.clone()).await
+                if let Err(e) = Self::dispatch_gpio(gpio_config, lines, state_sender.clone()).await
+                {
+                    warn!("gpio exited with error: {e}");
+                }
             })),
             Err(e) => warn!("gpio setup failed: {e}"),
         }
+
+        // copy start image to tmp location
+        self.load_start_image().await?;
 
         // will abort when either of these fail
         tokio::select!(

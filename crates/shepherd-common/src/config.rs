@@ -1,40 +1,25 @@
-use std::{fs::read_to_string, path::Path};
+use std::{
+    fs::{self, read_to_string},
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/shepherd.toml";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub mqtt: MqttConfig,
+    #[serde(default)]
     pub app: AppConfig,
+    #[serde(default)]
     pub run: RunConfig,
+    #[serde(default)]
     pub channel: ChannelConfig,
-    #[serde(default = "default_robot_usb")]
-    pub robot_usb: String,
-    #[serde(default = "default_arena_usb")]
-    pub arena_usb: String,
-}
-
-fn default_robot_usb() -> String {
-    "/media/RobotUSB".to_string()
-}
-fn default_arena_usb() -> String {
-    "/media/ArenaUSB".to_string()
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            mqtt: MqttConfig::default(),
-            app: AppConfig::default(),
-            run: RunConfig::default(),
-            channel: ChannelConfig::default(),
-            robot_usb: default_robot_usb(),
-            arena_usb: default_arena_usb(),
-        }
-    }
+    #[serde(default)]
+    pub path: PathConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,13 +55,9 @@ pub struct AppConfig {
     #[serde(default = "default_app_port")]
     pub port: u16,
     #[serde(default = "default_app_static_dir")]
-    pub static_dir: String,
+    pub static_dir: PathBuf,
     #[serde(default = "default_app_user_src_dir")]
-    pub user_src_dir: String,
-    #[serde(default = "default_app_user_cur_dir")]
-    pub user_cur_dir: String,
-    #[serde(default = "default_app_team_image")]
-    pub team_image: String,
+    pub user_src_dir: PathBuf,
 }
 
 fn default_app_service_id() -> String {
@@ -88,17 +69,11 @@ fn default_app_host() -> String {
 fn default_app_port() -> u16 {
     8080
 }
-fn default_app_static_dir() -> String {
-    "/var/shepherd/static".to_string()
+fn default_app_static_dir() -> PathBuf {
+    default_path_root().join("static")
 }
-fn default_app_user_src_dir() -> String {
-    "/var/shapherd/usercode/projects".to_string()
-}
-fn default_app_user_cur_dir() -> String {
-    "/var/shapherd/usercode/current".to_string()
-}
-fn default_app_team_image() -> String {
-    "/var/shepherd/team-image.jpg".to_string()
+fn default_app_user_src_dir() -> PathBuf {
+    default_path_root().join("usercode/projects")
 }
 
 impl Default for AppConfig {
@@ -109,8 +84,6 @@ impl Default for AppConfig {
             port: default_app_port(),
             static_dir: default_app_static_dir(),
             user_src_dir: default_app_user_src_dir(),
-            user_cur_dir: default_app_user_cur_dir(),
-            team_image: default_app_team_image(),
         }
     }
 }
@@ -163,11 +136,83 @@ impl Default for ChannelConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PathConfig {
+    #[serde(default = "default_path_root")]
+    pub root: PathBuf,
+    #[serde(default = "default_path_tmp_root")]
+    pub tmp_root: PathBuf,
+    #[serde(default = "default_path_hopper")]
+    pub hopper: PathBuf,
+    #[serde(default = "default_path_user_cur_dir")]
+    pub user_cur_dir: PathBuf,
+    #[serde(default = "default_path_team_image")]
+    pub team_image: PathBuf,
+    #[serde(default = "default_path_game_image")]
+    pub game_image: PathBuf,
+    #[serde(default = "default_path_robot_usb")]
+    pub robot_usb: PathBuf,
+    #[serde(default = "default_path_arena_usb")]
+    pub arena_usb: PathBuf,
+}
+
+fn default_path_root() -> PathBuf {
+    PathBuf::from("/var/shepherd")
+}
+fn default_path_tmp_root() -> PathBuf {
+    PathBuf::from("/tmp/shepherd")
+}
+fn default_path_hopper() -> PathBuf {
+    PathBuf::from("/run/hopper")
+}
+fn default_path_user_cur_dir() -> PathBuf {
+    default_path_root().join("usercode/current")
+}
+fn default_path_team_image() -> PathBuf {
+    default_path_root().join("team-image.jpg")
+}
+fn default_path_game_image() -> PathBuf {
+    default_path_root().join("game-image.jpg")
+}
+fn default_path_robot_usb() -> PathBuf {
+    PathBuf::from("/media/RobotUSB")
+}
+fn default_path_arena_usb() -> PathBuf {
+    PathBuf::from("/media/ArenaUSB")
+}
+
+impl Default for PathConfig {
+    fn default() -> Self {
+        Self {
+            root: default_path_root(),
+            tmp_root: default_path_tmp_root(),
+            hopper: default_path_hopper(),
+            user_cur_dir: default_path_user_cur_dir(),
+            team_image: default_path_team_image(),
+            game_image: default_path_game_image(),
+            robot_usb: default_path_robot_usb(),
+            arena_usb: default_path_arena_usb(),
+        }
+    }
+}
+
 impl Config {
     pub fn from_file(path: Option<&Path>) -> Result<Self> {
         let path = path.unwrap_or(Path::new(DEFAULT_CONFIG_PATH));
         let data = read_to_string(path)?;
         let cfg: Self = toml::from_str(&data)?;
         Ok(cfg)
+    }
+
+    pub fn setup_dirs(&self) -> Result<()> {
+        fs::create_dir_all(&self.path.root)?;
+        fs::create_dir_all(&self.path.tmp_root)?;
+        fs::create_dir_all(&self.path.hopper)?;
+        fs::create_dir_all(&self.path.user_cur_dir)?;
+
+        fs::create_dir_all(&self.app.static_dir)?;
+        fs::create_dir_all(&self.app.user_src_dir)?;
+
+        Ok(())
     }
 }
