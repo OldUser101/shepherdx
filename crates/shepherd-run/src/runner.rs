@@ -1,8 +1,8 @@
 use anyhow::Result;
-use shepherd_common::config::Config;
-use shepherd_mqtt::{MqttAsyncClient, MqttClient, MqttEventLoop};
+use shepherd_common::{RunState, config::Config};
+use shepherd_mqtt::{MqttAsyncClient, MqttClient, MqttEventLoop, messages::ControlMessage};
 use tokio_gpiod::{Bias, Chip, EdgeDetect, Input, Lines, Options};
-use tracing::warn;
+use tracing::{info, warn};
 
 pub struct Runner {
     config: Config,
@@ -10,6 +10,7 @@ pub struct Runner {
     mqtt_event_loop: MqttEventLoop,
     gpio_chip: Option<Chip>,
     gpio_lines: Option<Lines<Input>>,
+    state: RunState,
 }
 
 impl Runner {
@@ -27,8 +28,8 @@ impl Runner {
         let config = Config::from_file(None).unwrap_or_default();
 
         let (mqtt_client, mqtt_event_loop) = MqttClient::new(
-            config.run.service_id.clone(),
-            config.mqtt.broker.clone(),
+            &config.run.service_id,
+            &config.mqtt.broker,
             config.mqtt.port,
         );
 
@@ -46,10 +47,21 @@ impl Runner {
             mqtt_event_loop,
             gpio_chip,
             gpio_lines,
+            state: RunState::Init,
         }
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        self.mqtt_client
+            .subscribe(
+                &self.config.channel.robot_control,
+                async |msg: ControlMessage| {
+                    info!("got control message: {:#?}", msg);
+                    Ok(())
+                },
+            )
+            .await?;
+
         tokio::select!(
             res = self.mqtt_event_loop.run() => {
                 warn!("mqtt client exited {:#?}", res);

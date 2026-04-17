@@ -17,9 +17,10 @@ pub struct MqttAsyncClient {
 }
 
 impl MqttAsyncClient {
-    pub async fn subscribe<T, F, Fut>(&mut self, topic: String, f: F) -> anyhow::Result<()>
+    pub async fn subscribe<T, S, F, Fut>(&mut self, topic: S, f: F) -> anyhow::Result<()>
     where
         T: MqttMessage,
+        S: AsRef<str>,
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
@@ -36,28 +37,31 @@ impl MqttAsyncClient {
         self.registry
             .lock()
             .await
-            .entry(topic.clone())
+            .entry(topic.as_ref().to_string())
             .or_default()
             .push(handler);
-        self.client.subscribe(&topic, QoS::AtMostOnce).await?;
+        self.client
+            .subscribe(topic.as_ref(), QoS::AtMostOnce)
+            .await?;
 
-        debug!("client subscribed to topic '{}'", topic);
+        debug!("client subscribed to topic '{}'", topic.as_ref());
 
         Ok(())
     }
 
-    pub async fn publish<T>(&mut self, topic: String, msg: T) -> anyhow::Result<()>
+    pub async fn publish<T, S>(&mut self, topic: S, msg: T) -> anyhow::Result<()>
     where
         T: MqttMessage,
+        S: AsRef<str>,
     {
         let b = serde_json::to_vec(&msg)
             .map_err(|e| anyhow::anyhow!("failed to serialize message: {e}"))?;
 
         self.client
-            .publish(&topic, QoS::AtLeastOnce, false, b)
+            .publish(topic.as_ref(), QoS::AtLeastOnce, false, b)
             .await?;
 
-        debug!("client published to topic '{}'", topic);
+        debug!("client published to topic '{}'", topic.as_ref());
 
         Ok(())
     }
@@ -109,12 +113,11 @@ pub struct MqttClient;
 
 impl MqttClient {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(
-        service_id: String,
-        hostname: String,
-        port: u16,
-    ) -> (MqttAsyncClient, MqttEventLoop) {
-        let mut mqttoptions = MqttOptions::new(service_id, hostname, port);
+    pub fn new<S>(service_id: S, hostname: S, port: u16) -> (MqttAsyncClient, MqttEventLoop)
+    where
+        S: AsRef<str>,
+    {
+        let mut mqttoptions = MqttOptions::new(service_id.as_ref(), hostname.as_ref(), port);
         mqttoptions.set_keep_alive(Duration::from_secs(5));
 
         let (client, event_loop) = AsyncClient::new(mqttoptions, 10);

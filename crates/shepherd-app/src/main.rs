@@ -16,8 +16,8 @@ async fn _main() -> Result<()> {
     let config = Config::from_file(None).unwrap_or_default();
 
     let (client, mut event_loop) = MqttClient::new(
-        config.app.service_id.clone(),
-        config.mqtt.broker.clone(),
+        &config.app.service_id,
+        &config.mqtt.broker,
         config.mqtt.port,
     );
 
