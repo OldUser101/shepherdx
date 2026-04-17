@@ -5,12 +5,36 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/shepherd.toml";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub mqtt: MqttConfig,
     pub app: AppConfig,
     pub run: RunConfig,
     pub channel: ChannelConfig,
+    #[serde(default = "default_robot_usb")]
+    pub robot_usb: String,
+    #[serde(default = "default_arena_usb")]
+    pub arena_usb: String,
+}
+
+fn default_robot_usb() -> String {
+    "/media/RobotUSB".to_string()
+}
+fn default_arena_usb() -> String {
+    "/media/ArenaUSB".to_string()
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            mqtt: MqttConfig::default(),
+            app: AppConfig::default(),
+            run: RunConfig::default(),
+            channel: ChannelConfig::default(),
+            robot_usb: default_robot_usb(),
+            arena_usb: default_arena_usb(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
