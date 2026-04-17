@@ -17,3 +17,8 @@ pub struct ControlMessage {
     pub mode: shepherd_common::Mode,
     pub zone: shepherd_common::Zone,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RunStatusMessage {
+    pub state: shepherd_common::RunState,
+}

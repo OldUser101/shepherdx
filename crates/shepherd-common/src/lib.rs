@@ -2,7 +2,15 @@ use serde::{Deserialize, Serialize};
 
 pub mod config;
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Generate a status channel name from a service ID
+pub fn status_for<S>(service_id: S) -> String
+where
+    S: AsRef<str>,
+{
+    format!("{}/status", service_id.as_ref())
+}
+
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum RunState {
     #[default]
@@ -12,7 +20,7 @@ pub enum RunState {
     PostRun,
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Zone {
     #[default]
@@ -22,7 +30,7 @@ pub enum Zone {
     Green,
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]

@@ -49,7 +49,7 @@ impl MqttAsyncClient {
         Ok(())
     }
 
-    pub async fn publish<T, S>(&mut self, topic: S, msg: T) -> anyhow::Result<()>
+    pub async fn publish<T, S>(&self, topic: S, msg: T) -> anyhow::Result<()>
     where
         T: MqttMessage,
         S: AsRef<str>,

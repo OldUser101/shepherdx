@@ -21,7 +21,7 @@ struct ControlRequest {
 }
 
 async fn start(
-    State(mut state): State<ControlState>,
+    State(state): State<ControlState>,
     Json(payload): Json<ControlRequest>,
 ) -> ShepherdResult<()> {
     let msg = ControlMessage {
@@ -44,7 +44,7 @@ async fn start(
     Ok(())
 }
 
-async fn stop(State(mut state): State<ControlState>) -> ShepherdResult<()> {
+async fn stop(State(state): State<ControlState>) -> ShepherdResult<()> {
     let msg = ControlMessage {
         _type: ControlMessageType::Stop,
         zone: Zone::default(),
