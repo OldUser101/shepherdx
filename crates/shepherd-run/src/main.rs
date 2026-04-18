@@ -12,8 +12,12 @@ async fn main() {
     let now = chrono::Local::now();
     tracing::info!("shepherd-run started at {}", now.to_rfc3339());
 
-    let mut r = runner::Runner::new().await;
-    if let Err(e) = r.run().await {
-        error!("runner error: {e}");
+    match runner::Runner::new().await {
+        Ok(mut r) => {
+            if let Err(e) = r.run().await {
+                error!("runner error: {e}");
+            }
+        }
+        Err(e) => error!("failed to create runner: {e}"),
     }
 }

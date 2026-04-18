@@ -22,6 +22,7 @@ pub struct Runner {
     state: RunState,
     target_mode: Mode,
     target_zone: Zone,
+    start_pipe: hopper::Pipe,
 }
 
 impl Runner {
@@ -36,15 +37,23 @@ impl Runner {
         Ok((chip, lines))
     }
 
-    pub async fn new() -> Self {
+    pub async fn new() -> Result<Self> {
         let config = Arc::new(Config::from_file(None).unwrap_or_default());
 
-        Self {
+        let start_pipe = hopper::Pipe::new(
+            hopper::PipeMode::IN,
+            &config.run.service_id,
+            &config.channel.robot_control,
+            Some(&config.path.hopper),
+        )?;
+
+        Ok(Self {
             config,
             state: RunState::Init,
             target_mode: Mode::Dev,
             target_zone: Zone::from_id(0),
-        }
+            start_pipe,
+        })
     }
 
     async fn reset_state(&mut self) {
@@ -195,6 +204,8 @@ impl Runner {
 
         // set up configured directories
         self.config.setup_dirs()?;
+
+        self.start_pipe.open()?;
 
         let (state_sender, state_receiver) = mpsc::unbounded_channel();
 
