@@ -7,7 +7,8 @@ use axum::{
     routing::post,
 };
 use fs_extra::dir::CopyOptions;
-use shepherd_common::config::Config;
+use shepherd_common::{Mode, Zone, config::Config};
+use shepherd_mqtt::{MqttAsyncClient, messages::{ControlMessage, ControlMessageType}};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::info;
@@ -15,10 +16,12 @@ use zip::ZipArchive;
 
 use crate::error::{ShepherdError, ShepherdResult};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct UploadState {
     user_cur_dir: PathBuf,
     team_image: PathBuf,
+    mqttc: MqttAsyncClient,
+    robot_control: String,
 }
 
 async fn process_python(state: UploadState, mut field: Field<'_>) -> ShepherdResult<()> {
@@ -126,6 +129,24 @@ async fn upload_file(
         }
     }
 
+    // publish mqtt message to reset usercode
+    let msg = ControlMessage {
+        _type: ControlMessageType::Reset,
+        zone: Zone::default(),
+        mode: Mode::default(),
+    };
+
+    state
+        .mqttc
+        .publish(state.robot_control, msg)
+        .await
+        .map_err(|e| {
+            ShepherdError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("mqtt error: {e}"),
+            )
+        })?;
+
     Ok(())
 }
 
@@ -176,7 +197,7 @@ async fn upload_team_image(
     Ok(())
 }
 
-pub fn router(config: &Config) -> Router {
+pub fn router(config: &Config, mqttc: MqttAsyncClient) -> Router {
     Router::new()
         .route("/file", post(upload_file))
         .route("/team-image", post(upload_team_image))
@@ -184,5 +205,7 @@ pub fn router(config: &Config) -> Router {
         .with_state(UploadState {
             user_cur_dir: config.path.user_cur_dir.clone(),
             team_image: config.path.team_image.clone(),
+            mqttc,
+            robot_control: config.channel.robot_control.clone(),
         })
 }
