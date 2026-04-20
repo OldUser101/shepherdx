@@ -8,6 +8,7 @@ impl<T> MqttMessage for T where T: Serialize + DeserializeOwned + Send + Sync + 
 pub enum ControlMessageType {
     Start,
     Stop,
+    Reset,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

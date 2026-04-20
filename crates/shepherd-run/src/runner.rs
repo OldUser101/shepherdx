@@ -1,10 +1,11 @@
-use anyhow::Result;
+use std::{path::PathBuf, time::Duration};
+
+use anyhow::{Result, anyhow};
 use shepherd_common::{Mode, RunState, Zone, config::Config, status_for};
 use shepherd_mqtt::{
     MqttAsyncClient, MqttClient,
     messages::{ControlMessage, ControlMessageType, RunStatusMessage},
 };
-use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     fs,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -12,17 +13,20 @@ use tokio::{
 use tokio_gpiod::{Bias, Chip, EdgeDetect, Input, Lines, Options};
 use tracing::{info, warn};
 
+use crate::usercode::{Usercode, UsercodeHandle};
+
 pub enum StateEvent {
-    Transition(RunState, RunState),
+    Transition(RunState, Option<RunState>),
     SetTarget(Mode, Zone),
 }
 
 pub struct Runner {
-    config: Arc<Config>,
+    config: Config,
     state: RunState,
     target_mode: Mode,
     target_zone: Zone,
-    start_pipe: hopper::Pipe,
+    usercode_handle: Option<UsercodeHandle>,
+    state_sender: Option<UnboundedSender<StateEvent>>,
 }
 
 impl Runner {
@@ -38,21 +42,15 @@ impl Runner {
     }
 
     pub async fn new() -> Result<Self> {
-        let config = Arc::new(Config::from_file(None).unwrap_or_default());
-
-        let start_pipe = hopper::Pipe::new(
-            hopper::PipeMode::IN,
-            &config.run.service_id,
-            &config.channel.robot_control,
-            Some(&config.path.hopper),
-        )?;
+        let config = Config::from_file(None).unwrap_or_default();
 
         Ok(Self {
             config,
             state: RunState::Init,
             target_mode: Mode::Dev,
             target_zone: Zone::from_id(0),
-            start_pipe,
+            usercode_handle: None,
+            state_sender: None,
         })
     }
 
@@ -78,15 +76,44 @@ impl Runner {
         Ok(())
     }
 
+    /// reset usercode
     async fn state_ready(&mut self) -> Result<()> {
+        if let Some(uh) = &self.usercode_handle {
+            uh.start()?;
+        } else {
+            return Err(anyhow!("tried to start usercode, but handle was not set?"));
+        }
+
         Ok(())
     }
 
+    /// running transition, send start info and timeout to usercode
     async fn state_running(&mut self) -> Result<()> {
+        if let Some(uh) = &self.usercode_handle {
+            uh.send_start_info(self.target_mode, self.target_zone)?;
+
+            // set round timeout only if in comp mode
+            if self.target_mode == Mode::Comp {
+                uh.set_timeout(Duration::from_secs(self.config.run.comp_timeout))?;
+            }
+        } else {
+            return Err(anyhow!(
+                "tried to configure usercode, but handle was not set?"
+            ));
+        }
+
         Ok(())
     }
 
+    /// post-run transition, kill usercode, reset state
     async fn state_post_run(&mut self) -> Result<()> {
+        if let Some(uh) = &self.usercode_handle {
+            uh.kill()?;
+        } else {
+            return Err(anyhow!("tried to kill usercode, but handle was not set?"));
+        }
+
+        self.reset_state().await;
         Ok(())
     }
 
@@ -102,15 +129,17 @@ impl Runner {
             match ev {
                 StateEvent::Transition(next, prev) => {
                     // states must transition in specified sequence
-                    if self.state != prev {
+                    if let Some(prev) = prev
+                        && self.state != prev
+                    {
                         warn!(
-                            "cannot switch to {:#?} from {:#?}, requires {:#?}",
+                            "cannot switch to {:?} from {:?}, requires {:?}",
                             next, self.state, prev
                         );
                         continue;
                     }
 
-                    info!("transition to {:#?}", next);
+                    info!("transition to {:?}", next);
 
                     self.state = next;
 
@@ -149,14 +178,20 @@ impl Runner {
 
     /// Dispatch MQTT events to state transitions
     async fn dispatch_mqtt(msg: ControlMessage, sender: UnboundedSender<StateEvent>) -> Result<()> {
-        info!("got control message: {:#?}", msg);
+        info!("got mqtt control message: {:?}", msg);
         match msg._type {
             ControlMessageType::Start => {
                 sender.send(StateEvent::SetTarget(msg.mode, msg.zone))?;
-                sender.send(StateEvent::Transition(RunState::Running, RunState::Ready))?
+                sender.send(StateEvent::Transition(
+                    RunState::Running,
+                    Some(RunState::Ready),
+                ))?
             }
             ControlMessageType::Stop => {
-                sender.send(StateEvent::Transition(RunState::PostRun, RunState::Running))?
+                sender.send(StateEvent::Transition(RunState::PostRun, None))?
+            }
+            ControlMessageType::Reset => {
+                sender.send(StateEvent::Transition(RunState::Ready, None))?
             }
         }
         Ok(())
@@ -164,7 +199,7 @@ impl Runner {
 
     /// Dispatch GPIO events to state transitions
     async fn dispatch_gpio(
-        config: Arc<Config>,
+        config: Config,
         lines: Lines<Input>,
         sender: UnboundedSender<StateEvent>,
     ) -> Result<()> {
@@ -191,7 +226,10 @@ impl Runner {
                 };
 
                 sender.send(StateEvent::SetTarget(Mode::Comp, zone))?;
-                sender.send(StateEvent::Transition(RunState::Running, RunState::Ready))?;
+                sender.send(StateEvent::Transition(
+                    RunState::Running,
+                    Some(RunState::Ready),
+                ))?;
             }
         }
     }
@@ -200,12 +238,11 @@ impl Runner {
     pub async fn run(&mut self) -> Result<()> {
         // destroy previous sessions, if any
         self.state = RunState::Init;
+        self.state_sender = None;
         self.reset_state().await;
 
         // set up configured directories
         self.config.setup_dirs()?;
-
-        self.start_pipe.open()?;
 
         let (state_sender, state_receiver) = mpsc::unbounded_channel();
 
@@ -216,7 +253,10 @@ impl Runner {
         );
 
         // transition immediately into ready when dispatch starts later
-        state_sender.send(StateEvent::Transition(RunState::Ready, RunState::Init))?;
+        state_sender.send(StateEvent::Transition(
+            RunState::Ready,
+            Some(RunState::Init),
+        ))?;
 
         // setup mqtt receiver for control events
         let mqtt_state_sender = state_sender.clone();
@@ -233,10 +273,12 @@ impl Runner {
 
         // setup gpio handling if available
         let gpio_config = self.config.clone();
+        let gpio_state_sender = state_sender.clone();
         match Self::setup_gpio(&self.config).await {
             // we don't care about joining later, task runs anyway
             Ok((_, lines)) => std::mem::drop(tokio::task::spawn(async move {
-                if let Err(e) = Self::dispatch_gpio(gpio_config, lines, state_sender.clone()).await
+                if let Err(e) =
+                    Self::dispatch_gpio(gpio_config, lines, gpio_state_sender.clone()).await
                 {
                     warn!("gpio exited with error: {e}");
                 }
@@ -247,14 +289,30 @@ impl Runner {
         // copy start image to tmp location
         self.load_start_image().await?;
 
+        // initialise usercode manager
+        let (mut usercode, usercode_handle) = Usercode::new(self.config.clone())?;
+
+        let usercode_state_sender = state_sender.clone();
+        usercode.on_exit(Some(move || {
+            // force transition to post-run since usercode state is unknown
+            let _ = usercode_state_sender.send(StateEvent::Transition(RunState::PostRun, None));
+        }));
+
+        self.usercode_handle = Some(usercode_handle);
+        self.state_sender = Some(state_sender);
+
         // will abort when either of these fail
         tokio::select!(
             res = self.dispatch_state(&mqtt_client, state_receiver) => {
-                warn!("state dispatch exited {:#?}", res);
+                warn!("state dispatch exited {:?}", res);
                 res?
             }
             res = mqtt_event_loop.run() => {
-                warn!("mqtt client exited {:#?}", res);
+                warn!("mqtt client exited {:?}", res);
+                res?
+            }
+            res = usercode.run() => {
+                warn!("usercode runner exited {:?}", res);
                 res?
             }
         );

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/shepherd.toml";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Config {
     #[serde(default)]
     pub mqtt: MqttConfig,
@@ -22,7 +22,7 @@ pub struct Config {
     pub path: PathConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MqttConfig {
     #[serde(default = "default_mqtt_broker")]
     pub broker: String,
@@ -46,7 +46,7 @@ impl Default for MqttConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     #[serde(default = "default_app_service_id")]
     pub service_id: String,
@@ -88,7 +88,7 @@ impl Default for AppConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunConfig {
     #[serde(default = "default_run_service_id")]
     pub service_id: String,
@@ -96,6 +96,8 @@ pub struct RunConfig {
     pub start_button: u32,
     #[serde(default = "default_run_gpio_device")]
     pub gpio_device: String,
+    #[serde(default = "default_run_comp_timeout")]
+    pub comp_timeout: u64,
 }
 
 fn default_run_service_id() -> String {
@@ -107,6 +109,9 @@ fn default_run_start_button() -> u32 {
 fn default_run_gpio_device() -> String {
     "gpiochip0".to_string()
 }
+fn default_run_comp_timeout() -> u64 {
+    10
+}
 
 impl Default for RunConfig {
     fn default() -> Self {
@@ -114,29 +119,36 @@ impl Default for RunConfig {
             service_id: default_run_service_id(),
             start_button: default_run_start_button(),
             gpio_device: default_run_gpio_device(),
+            comp_timeout: default_run_comp_timeout(),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChannelConfig {
     #[serde(default = "default_channel_robot_control")]
     pub robot_control: String,
+    #[serde(default = "default_channel_robot_log")]
+    pub robot_log: String,
 }
 
 fn default_channel_robot_control() -> String {
     "robot/control".to_string()
+}
+fn default_channel_robot_log() -> String {
+    "robot/log".to_string()
 }
 
 impl Default for ChannelConfig {
     fn default() -> Self {
         Self {
             robot_control: default_channel_robot_control(),
+            robot_log: default_channel_robot_log(),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PathConfig {
     #[serde(default = "default_path_root")]
     pub root: PathBuf,

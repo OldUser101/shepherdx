@@ -65,10 +65,32 @@ async fn stop(State(state): State<ControlState>) -> ShepherdResult<()> {
     Ok(())
 }
 
+async fn reset(State(state): State<ControlState>) -> ShepherdResult<()> {
+    let msg = ControlMessage {
+        _type: ControlMessageType::Reset,
+        zone: Zone::default(),
+        mode: Mode::default(),
+    };
+
+    state
+        .mqttc
+        .publish(state.robot_control, msg)
+        .await
+        .map_err(|e| {
+            ShepherdError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("mqtt error: {e}"),
+            )
+        })?;
+
+    Ok(())
+}
+
 pub fn router(config: &Config, mqttc: MqttAsyncClient) -> Router {
     Router::new()
         .route("/start", post(start))
         .route("/stop", post(stop))
+        .route("/reset", post(reset))
         .with_state(ControlState {
             mqttc,
             robot_control: config.channel.robot_control.clone(),

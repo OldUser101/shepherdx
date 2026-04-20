@@ -1,6 +1,7 @@
 use tracing::{Level, error};
 
 mod runner;
+mod usercode;
 
 #[tokio::main]
 async fn main() {
