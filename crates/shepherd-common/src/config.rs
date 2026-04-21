@@ -17,6 +17,8 @@ pub struct Config {
     #[serde(default)]
     pub run: RunConfig,
     #[serde(default)]
+    pub ws: WsConfig,
+    #[serde(default)]
     pub channel: ChannelConfig,
     #[serde(default)]
     pub path: PathConfig,
@@ -125,11 +127,43 @@ impl Default for RunConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WsConfig {
+    #[serde(default = "default_ws_service_id")]
+    pub service_id: String,
+    #[serde(default = "default_ws_host")]
+    pub host: String,
+    #[serde(default = "default_ws_port")]
+    pub port: u16,
+}
+
+fn default_ws_service_id() -> String {
+    "shepherd-ws".to_string()
+}
+fn default_ws_host() -> String {
+    "0.0.0.0".to_string()
+}
+fn default_ws_port() -> u16 {
+    5001
+}
+
+impl Default for WsConfig {
+    fn default() -> Self {
+        Self {
+            service_id: default_ws_service_id(),
+            host: default_ws_host(),
+            port: default_ws_port(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChannelConfig {
     #[serde(default = "default_channel_robot_control")]
     pub robot_control: String,
     #[serde(default = "default_channel_robot_log")]
     pub robot_log: String,
+    #[serde(default = "default_channel_camera")]
+    pub camera: String,
 }
 
 fn default_channel_robot_control() -> String {
@@ -138,12 +172,16 @@ fn default_channel_robot_control() -> String {
 fn default_channel_robot_log() -> String {
     "robot/log".to_string()
 }
+fn default_channel_camera() -> String {
+    "camera".to_string()
+}
 
 impl Default for ChannelConfig {
     fn default() -> Self {
         Self {
             robot_control: default_channel_robot_control(),
             robot_log: default_channel_robot_log(),
+            camera: default_channel_camera(),
         }
     }
 }

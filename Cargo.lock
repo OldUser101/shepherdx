@@ -1383,11 +1383,13 @@ name = "shepherd-ws"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "hopper",
  "serde",
  "serde_json",
  "shepherd-common",
  "shepherd-mqtt",
+ "tokio",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
