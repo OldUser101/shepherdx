@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 use crate::messages::MqttMessage;
 
 pub type MqttHandler =
-    Box<dyn Fn(&[u8]) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> + Send + Sync>;
+    Box<dyn Fn(Vec<u8>) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct MqttAsyncClient {
@@ -24,8 +24,8 @@ impl MqttAsyncClient {
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handler: MqttHandler = Box::new(move |b| {
-            let res: anyhow::Result<T> = serde_json::from_slice(b)
+        let handler: MqttHandler = Box::new(move |v| {
+            let res: anyhow::Result<T> = serde_json::from_slice(v.as_slice())
                 .map_err(|e| anyhow::anyhow!("failed to deserialize message : {e}"));
 
             match res {
@@ -33,6 +33,29 @@ impl MqttAsyncClient {
                 Ok(msg) => Box::pin(f(msg)),
             }
         });
+
+        self.registry
+            .lock()
+            .await
+            .entry(topic.as_ref().to_string())
+            .or_default()
+            .push(handler);
+        self.client
+            .subscribe(topic.as_ref(), QoS::AtMostOnce)
+            .await?;
+
+        debug!("client subscribed to topic '{}'", topic.as_ref());
+
+        Ok(())
+    }
+
+    pub async fn subscribe_raw<S, F, Fut>(&mut self, topic: S, f: F) -> anyhow::Result<()>
+    where
+        S: AsRef<str>,
+        F: Fn(Vec<u8>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        let handler: MqttHandler = Box::new(move |v| Box::pin(f(v)));
 
         self.registry
             .lock()
@@ -57,8 +80,18 @@ impl MqttAsyncClient {
         let b = serde_json::to_vec(&msg)
             .map_err(|e| anyhow::anyhow!("failed to serialize message: {e}"))?;
 
+        self.publish_raw(topic, b).await?;
+
+        Ok(())
+    }
+
+    pub async fn publish_raw<S, V>(&self, topic: S, msg: V) -> anyhow::Result<()>
+    where
+        S: AsRef<str>,
+        V: Into<Vec<u8>>,
+    {
         self.client
-            .publish(topic.as_ref(), QoS::AtLeastOnce, false, b)
+            .publish(topic.as_ref(), QoS::AtLeastOnce, false, msg)
             .await?;
 
         debug!("client published to topic '{}'", topic.as_ref());
@@ -85,7 +118,7 @@ impl MqttEventLoop {
                     debug!("mqtt client got publish on '{}'", p.topic);
 
                     if let Some(handlers) = self.registry.lock().await.get(&p.topic) {
-                        let futures = handlers.iter().map(|h| h(&p.payload));
+                        let futures = handlers.iter().map(|h| h(p.payload.to_vec()));
                         let results = join_all(futures).await;
 
                         for r in results {

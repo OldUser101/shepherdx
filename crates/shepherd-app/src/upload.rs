@@ -8,7 +8,10 @@ use axum::{
 };
 use fs_extra::dir::CopyOptions;
 use shepherd_common::{Mode, Zone, config::Config};
-use shepherd_mqtt::{MqttAsyncClient, messages::{ControlMessage, ControlMessageType}};
+use shepherd_mqtt::{
+    MqttAsyncClient,
+    messages::{ControlMessage, ControlMessageType},
+};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::info;
