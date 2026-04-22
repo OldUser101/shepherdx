@@ -1,19 +1,23 @@
 use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 
+use bytes::Bytes;
 use futures::future::join_all;
 use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use crate::messages::MqttMessage;
+use crate::{Wildcard, messages::MqttMessage};
 
-pub type MqttHandler =
-    Box<dyn Fn(Vec<u8>) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> + Send + Sync>;
+pub type MqttHandler = Box<
+    dyn Fn(String, Bytes) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> + Send + Sync,
+>;
+
+type Registry = HashMap<String, Vec<MqttHandler>>;
 
 #[derive(Clone)]
 pub struct MqttAsyncClient {
     client: AsyncClient,
-    registry: Arc<Mutex<HashMap<String, Vec<MqttHandler>>>>,
+    registry: Arc<Mutex<Registry>>,
 }
 
 impl MqttAsyncClient {
@@ -21,16 +25,16 @@ impl MqttAsyncClient {
     where
         T: MqttMessage,
         S: AsRef<str>,
-        F: Fn(T) -> Fut + Send + Sync + 'static,
+        F: Fn(String, T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handler: MqttHandler = Box::new(move |v| {
-            let res: anyhow::Result<T> = serde_json::from_slice(v.as_slice())
+        let handler: MqttHandler = Box::new(move |t, b| {
+            let res: anyhow::Result<T> = serde_json::from_slice(&b)
                 .map_err(|e| anyhow::anyhow!("failed to deserialize message : {e}"));
 
             match res {
                 Err(e) => Box::pin(async { Err(e) }),
-                Ok(msg) => Box::pin(f(msg)),
+                Ok(msg) => Box::pin(f(t, msg)),
             }
         });
 
@@ -52,10 +56,10 @@ impl MqttAsyncClient {
     pub async fn subscribe_raw<S, F, Fut>(&mut self, topic: S, f: F) -> anyhow::Result<()>
     where
         S: AsRef<str>,
-        F: Fn(Vec<u8>) -> Fut + Send + Sync + 'static,
+        F: Fn(String, Bytes) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handler: MqttHandler = Box::new(move |v| Box::pin(f(v)));
+        let handler: MqttHandler = Box::new(move |t, b| Box::pin(f(t, b)));
 
         self.registry
             .lock()
@@ -102,10 +106,28 @@ impl MqttAsyncClient {
 
 pub struct MqttEventLoop {
     event_loop: EventLoop,
-    registry: Arc<Mutex<HashMap<String, Vec<MqttHandler>>>>,
+    registry: Arc<Mutex<Registry>>,
 }
 
 impl MqttEventLoop {
+    async fn dispatch(registry: Arc<Mutex<Registry>>, topic: String, payload: Bytes) {
+        let registry = registry.lock().await;
+
+        // match topics and iter over handlers
+        for tgt_topic in registry.keys().filter(|t| Wildcard::new(t).matches(&topic)) {
+            if let Some(handlers) = registry.get(tgt_topic) {
+                let futures = handlers.iter().map(|h| h(topic.clone(), payload.clone()));
+                let results = join_all(futures).await;
+
+                for r in results {
+                    if let Err(e) = r {
+                        warn!("handler for '{}' returned error: {e}", tgt_topic);
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn run(&mut self) -> anyhow::Result<()> {
         loop {
             match self
@@ -117,16 +139,13 @@ impl MqttEventLoop {
                 Event::Incoming(Packet::Publish(p)) => {
                     debug!("mqtt client got publish on '{}'", p.topic);
 
-                    if let Some(handlers) = self.registry.lock().await.get(&p.topic) {
-                        let futures = handlers.iter().map(|h| h(p.payload.to_vec()));
-                        let results = join_all(futures).await;
+                    let registry = self.registry.clone();
+                    let topic = p.topic.clone();
+                    let payload = p.payload.clone();
 
-                        for r in results {
-                            if let Err(e) = r {
-                                warn!("handler for '{}' returned error: {e}", p.topic);
-                            }
-                        }
-                    }
+                    tokio::spawn(async move {
+                        Self::dispatch(registry, topic, payload).await;
+                    });
                 }
                 Event::Incoming(Packet::Connect(c)) => {
                     debug!("mqtt client connected with id '{}'", c.client_id);

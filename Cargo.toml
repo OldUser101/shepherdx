@@ -16,9 +16,11 @@ license = "BSD-2-Clause"
 [workspace.dependencies]
 anyhow = "1.0.102"
 axum = { version = "0.8.8", features = ["multipart"] }
+bytes = "1.11.1"
 chrono = "0.4.44"
 fs_extra = "1.3.0"
 futures = "0.3.32"
+futures-util = "0.3.32"
 hopper = { git = "https://github.com/systemetric/hopper", rev = "v0.1.1", version = "0.1.1" }
 rumqttc = "0.25.1"
 serde = { version = "1.0.228", features = ["derive"] }

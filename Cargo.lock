@@ -1351,6 +1351,7 @@ name = "shepherd-mqtt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "chrono",
  "futures",
  "rumqttc",
@@ -1383,7 +1384,9 @@ name = "shepherd-ws"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "chrono",
+ "futures-util",
  "hopper",
  "serde",
  "serde_json",

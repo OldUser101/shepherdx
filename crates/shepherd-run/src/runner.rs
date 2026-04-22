@@ -252,6 +252,9 @@ impl Runner {
             self.config.mqtt.port,
         );
 
+        // mqtt needs to run independently
+        let mqtt_loop = tokio::spawn(async move { mqtt_event_loop.run().await });
+
         // transition immediately into ready when dispatch starts later
         state_sender.send(StateEvent::Transition(
             RunState::Ready,
@@ -263,7 +266,7 @@ impl Runner {
         mqtt_client
             .subscribe(
                 &self.config.channel.robot_control,
-                move |msg: ControlMessage| {
+                move |_, msg: ControlMessage| {
                     // this feels like a hack
                     let state_sender = mqtt_state_sender.clone();
                     async move { Self::dispatch_mqtt(msg, state_sender).await }
@@ -307,9 +310,13 @@ impl Runner {
                 warn!("state dispatch exited {:?}", res);
                 res?
             }
-            res = mqtt_event_loop.run() => {
+            res = mqtt_loop => {
                 warn!("mqtt client exited {:?}", res);
-                res?
+
+                match res {
+                    Ok(e) => e?,
+                    Err(e) => return Err(e.into()),
+                }
             }
             res = usercode.run() => {
                 warn!("usercode runner exited {:?}", res);
