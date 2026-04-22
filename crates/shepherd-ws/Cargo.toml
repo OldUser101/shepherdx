@@ -7,7 +7,9 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+bytes.workspace = true
 chrono.workspace = true
+futures-util.workspace = true
 hopper.workspace = true
 serde.workspace = true
 serde_json.workspace = true
