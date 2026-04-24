@@ -1,20 +1,18 @@
 use anyhow::Result;
 use axum::Router;
-use shepherd_common::config::Config;
+use shepherd_common::{args::call_with_args, config::Config};
 use shepherd_mqtt::MqttClient;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{services::fs::ServeDir, trace::TraceLayer};
-use tracing::{Level, warn};
+use tracing::warn;
 
 mod control;
 mod error;
 mod files;
 mod upload;
 
-async fn _main() -> Result<()> {
-    let config = Config::from_file(None).unwrap_or_default();
-
+async fn _main(config: Config) -> Result<()> {
     // server relies on several directories being present
     // TODO: create them as needed later?
     config.setup_dirs()?;
@@ -49,16 +47,5 @@ async fn _main() -> Result<()> {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_timer(tracing_subscriber::fmt::time::uptime())
-        .with_max_level(Level::DEBUG)
-        .init();
-
-    let now = chrono::Local::now();
-    tracing::info!("shepherd-app started at {}", now.to_rfc3339());
-
-    if let Err(e) = _main().await {
-        tracing::error!("{}", e.to_string());
-        std::process::exit(1);
-    }
+    call_with_args("shepherd-app", _main).await;
 }

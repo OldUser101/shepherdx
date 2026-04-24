@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+pub mod args;
 pub mod config;
 
 /// Generate a status channel name from a service ID

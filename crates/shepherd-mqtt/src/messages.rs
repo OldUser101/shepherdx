@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub trait MqttMessage: Serialize + DeserializeOwned + Send + Sync + 'static {}
 impl<T> MqttMessage for T where T: Serialize + DeserializeOwned + Send + Sync + 'static {}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ControlMessageType {
     Start,

@@ -41,9 +41,7 @@ impl Runner {
         Ok((chip, lines))
     }
 
-    pub async fn new() -> Result<Self> {
-        let config = Config::from_file(None).unwrap_or_default();
-
+    pub async fn new(config: Config) -> Result<Self> {
         Ok(Self {
             config,
             state: RunState::Init,
