@@ -5,14 +5,16 @@ use shepherd_mqtt::messages::{ControlMessage, ControlMessageType};
 use tokio::sync::{broadcast, watch};
 use tracing::{debug, error};
 
-use crate::{HOPPER_BUF_SIZE, buffer::LogBufferHandle};
+use crate::buffer::LogBufferHandle;
+
+const HOPPER_BUF_SIZE: usize = 65536;
 
 /// forward raw mqtt messages to websockets
 pub async fn dispatch_mqtt_message(
     sender: broadcast::Sender<(String, Bytes)>,
     log_handle: LogBufferHandle,
-    robot_control: String,
     topic: String,
+    robot_control: String,
     msg: Bytes,
 ) -> Result<()> {
     if topic == robot_control
@@ -30,9 +32,9 @@ pub async fn dispatch_mqtt_message(
 
 /// read logs from hopper and push them to websockets
 pub fn dispatch_log_messages(
-    log_pipe: Pipe,
     sender: broadcast::Sender<(String, Bytes)>,
     log_handle: LogBufferHandle,
+    log_pipe: Pipe,
     topic: String,
 ) -> Result<()> {
     let mut buf = BytesMut::with_capacity(HOPPER_BUF_SIZE);
@@ -97,4 +99,3 @@ pub fn dispatch_images(
         }
     }
 }
-

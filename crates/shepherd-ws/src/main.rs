@@ -20,8 +20,6 @@ mod dispatch;
 mod receiver;
 mod ws;
 
-const HOPPER_BUF_SIZE: usize = 65536;
-
 async fn _main(config: Config) -> Result<()> {
     // set up hopper pipes for logs and images
     let mut log_pipe = Pipe::new(
@@ -81,8 +79,9 @@ async fn _main(config: Config) -> Result<()> {
     // dispatch log messages forever
     let log_sender = msg_sender.clone();
     let log_topic = config.channel.robot_log.clone();
+    let _log_handle = log_handle.clone();
     tokio::task::spawn_blocking(move || {
-        let _ = dispatch_log_messages(log_pipe, log_sender, log_handle, log_topic);
+        let _ = dispatch_log_messages(log_sender, _log_handle, log_pipe, log_topic);
     });
 
     // dispatch images forever
@@ -102,6 +101,8 @@ async fn _main(config: Config) -> Result<()> {
                         // spawn a task to handle this websocket, exists for websocket lifetime
                         tokio::spawn(handle_websocket_connection(stream, WsState {
                             camera: config.channel.camera.clone(),
+                            robot_log: config.channel.robot_log.clone(),
+                            log_handle: log_handle.clone(),
                             cam_rx: camera_sender.subscribe(),
                             msg_rx: msg_sender.subscribe(),
                         }));

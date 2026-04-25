@@ -1,8 +1,8 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::Result;
 use bytes::Bytes;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
 pub const LOG_BUFFER_CAPACITY: usize = 1024;
@@ -14,6 +14,7 @@ enum LogBufferMessage {
 
 #[derive(Debug, Clone)]
 pub struct LogBufferHandle {
+    buffer: Arc<Mutex<VecDeque<Bytes>>>,
     tx: mpsc::UnboundedSender<LogBufferMessage>,
 }
 
@@ -29,21 +30,38 @@ impl LogBufferHandle {
         self.tx.send(LogBufferMessage::Clear)?;
         Ok(())
     }
+
+    /// Acquire a copy of the current buffer contents
+    pub async fn current_log(&self) -> Vec<Bytes> {
+        let mut v = Vec::new();
+
+        for b in self.buffer.lock().await.iter().rev() {
+            v.push(b.clone());
+        }
+
+        v
+    }
 }
 
 #[derive(Debug)]
 pub struct LogBuffer {
-    buffer: VecDeque<Bytes>,
+    buffer: Arc<Mutex<VecDeque<Bytes>>>,
     rx: mpsc::UnboundedReceiver<LogBufferMessage>,
 }
 
 impl LogBuffer {
-    /// Create a new buffer with specified minimum capacity
+    /// Create a new buffer for log storage
     pub fn new(capacity: usize) -> (Self, LogBufferHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let buffer = VecDeque::with_capacity(capacity);
+        let buffer = Arc::new(Mutex::new(VecDeque::with_capacity(capacity)));
 
-        (Self { buffer, rx }, LogBufferHandle { tx })
+        (
+            Self {
+                buffer: buffer.clone(),
+                rx,
+            },
+            LogBufferHandle { buffer, tx },
+        )
     }
 
     /// Dispatch buffer events forever
@@ -51,11 +69,11 @@ impl LogBuffer {
         loop {
             match self.rx.recv().await {
                 Some(LogBufferMessage::Clear) => {
-                    self.buffer.clear();
+                    self.buffer.lock().await.clear();
                     debug!("cleared current log buffer");
                 }
                 Some(LogBufferMessage::Append(b)) => {
-                    self.buffer.push_back(b);
+                    self.buffer.lock().await.push_back(b);
                 }
                 None => continue,
             }

@@ -12,13 +12,15 @@ use tokio_tungstenite::{
         handshake::server::{Request, Response},
     },
 };
-use tracing::info;
+use tracing::{debug, info};
 
-use crate::receiver::MessageReceiver;
+use crate::{buffer::LogBufferHandle, receiver::MessageReceiver};
 
 #[derive(Debug)]
 pub struct WsState {
     pub camera: String,
+    pub robot_log: String,
+    pub log_handle: LogBufferHandle,
     pub cam_rx: watch::Receiver<(String, Bytes)>,
     pub msg_rx: broadcast::Receiver<(String, Bytes)>,
 }
@@ -46,6 +48,15 @@ pub async fn handle_websocket_connection(stream: TcpStream, state: WsState) -> R
 
     let mut rx = if sub_topic == state.camera {
         MessageReceiver::Image(state.camera, state.cam_rx)
+    } else if sub_topic == state.robot_log {
+        // send stored logs to new connections
+        for msg in state.log_handle.current_log().await {
+            ws_tx.send(Message::Binary(msg)).await?;
+        }
+
+        debug!("sent current logs to new client");
+
+        MessageReceiver::Raw(sub_topic.clone(), state.msg_rx)
     } else {
         MessageReceiver::Raw(sub_topic.clone(), state.msg_rx)
     };
@@ -54,12 +65,8 @@ pub async fn handle_websocket_connection(stream: TcpStream, state: WsState) -> R
         tokio::select! {
             msg = rx.recv() => {
                 match msg {
-                    Ok(payload) => {
-                        ws_tx.send(Message::Binary(payload)).await?;
-                    }
-                    Err(e) => {
-                        return Err(e)?;
-                    }
+                    Ok(payload) => ws_tx.send(Message::Binary(payload)).await?,
+                    Err(e) => return Err(e)?,
                 }
             }
 
