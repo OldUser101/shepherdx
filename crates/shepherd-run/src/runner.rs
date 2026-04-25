@@ -253,9 +253,6 @@ impl Runner {
         self.state_sender = None;
         self.reset_state().await;
 
-        // set up configured directories
-        self.config.setup_dirs()?;
-
         let (state_sender, state_receiver) = mpsc::unbounded_channel();
 
         let (mut mqtt_client, mut mqtt_event_loop) = MqttClient::new(
