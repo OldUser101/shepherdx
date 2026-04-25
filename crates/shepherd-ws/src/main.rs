@@ -38,13 +38,10 @@ async fn _main(config: Config) -> Result<()> {
     log_pipe.open()?;
     camera_pipe.open()?;
 
-    let (mut log_buffer, log_handle) = LogBuffer::new(buffer::LOG_BUFFER_CAPACITY);
+    let (mut log_buffer, log_handle) = LogBuffer::new(config.ws.log_buffer_size);
 
-    let (mut mqtt_client, mut mqtt_event_loop) = MqttClient::new(
-        &config.ws.service_id,
-        &config.mqtt.broker,
-        config.mqtt.port,
-    );
+    let (mut mqtt_client, mut mqtt_event_loop) =
+        MqttClient::new(&config.ws.service_id, &config.mqtt.broker, config.mqtt.port);
 
     // run mqtt event loop independently
     let mqtt_loop = tokio::spawn(async move {
@@ -86,14 +83,25 @@ async fn _main(config: Config) -> Result<()> {
     let log_topic = config.channel.robot_log.clone();
     let _log_handle = log_handle.clone();
     tokio::task::spawn_blocking(move || {
-        let _ = dispatch_log_messages(log_sender, _log_handle, log_pipe, log_topic);
+        let _ = dispatch_log_messages(
+            log_sender,
+            _log_handle,
+            log_pipe,
+            log_topic,
+            config.ws.hopper_buffer_size,
+        );
     });
 
     // dispatch images forever
     let image_sender = camera_sender.clone();
     let image_topic = config.channel.camera.clone();
     tokio::task::spawn_blocking(move || {
-        let _ = dispatch_images(camera_pipe, image_sender, image_topic);
+        let _ = dispatch_images(
+            camera_pipe,
+            image_sender,
+            image_topic,
+            config.ws.hopper_buffer_size,
+        );
     });
 
     let listener = TcpListener::bind(format!("{}:{}", &config.ws.host, config.ws.port)).await?;

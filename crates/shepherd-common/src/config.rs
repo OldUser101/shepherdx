@@ -140,6 +140,10 @@ pub struct WsConfig {
     pub host: String,
     #[serde(default = "default_ws_port")]
     pub port: u16,
+    #[serde(default = "default_ws_log_buffer_size")]
+    pub log_buffer_size: usize,
+    #[serde(default = "default_ws_hopper_buffer_size")]
+    pub hopper_buffer_size: usize,
 }
 
 fn default_ws_service_id() -> String {
@@ -151,6 +155,14 @@ fn default_ws_host() -> String {
 fn default_ws_port() -> u16 {
     5001
 }
+fn default_ws_log_buffer_size() -> usize {
+    // 16 MiB
+    16 * (1 << 20)
+}
+fn default_ws_hopper_buffer_size() -> usize {
+    // 64 KiB
+    64 * (1 << 10)
+}
 
 impl Default for WsConfig {
     fn default() -> Self {
@@ -158,6 +170,8 @@ impl Default for WsConfig {
             service_id: default_ws_service_id(),
             host: default_ws_host(),
             port: default_ws_port(),
+            log_buffer_size: default_ws_log_buffer_size(),
+            hopper_buffer_size: default_ws_hopper_buffer_size(),
         }
     }
 }

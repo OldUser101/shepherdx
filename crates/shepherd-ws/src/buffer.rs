@@ -5,8 +5,6 @@ use bytes::Bytes;
 use tokio::sync::{Mutex, mpsc};
 use tracing::debug;
 
-pub const LOG_BUFFER_CAPACITY: usize = 1024;
-
 enum LogBufferMessage {
     Append(Bytes),
     Clear,
@@ -33,19 +31,16 @@ impl LogBufferHandle {
 
     /// Acquire a copy of the current buffer contents
     pub async fn current_log(&self) -> Vec<Bytes> {
-        let mut v = Vec::new();
-
-        for b in self.buffer.lock().await.iter() {
-            v.push(b.clone());
-        }
-
-        v
+        let buffer = self.buffer.lock().await;
+        buffer.iter().cloned().collect()
     }
 }
 
 #[derive(Debug)]
 pub struct LogBuffer {
     buffer: Arc<Mutex<VecDeque<Bytes>>>,
+    total_size: usize,
+    max_size: usize,
     rx: mpsc::UnboundedReceiver<LogBufferMessage>,
 }
 
@@ -53,11 +48,13 @@ impl LogBuffer {
     /// Create a new buffer for log storage
     pub fn new(capacity: usize) -> (Self, LogBufferHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let buffer = Arc::new(Mutex::new(VecDeque::with_capacity(capacity)));
+        let buffer = Arc::new(Mutex::new(VecDeque::new()));
 
         (
             Self {
                 buffer: buffer.clone(),
+                total_size: 0,
+                max_size: capacity,
                 rx,
             },
             LogBufferHandle { buffer, tx },
@@ -69,11 +66,25 @@ impl LogBuffer {
         loop {
             match self.rx.recv().await {
                 Some(LogBufferMessage::Clear) => {
-                    self.buffer.lock().await.truncate(0);
+                    let mut buffer = self.buffer.lock().await;
+                    buffer.truncate(0);
+                    self.total_size = 0;
                     debug!("cleared current log buffer");
                 }
                 Some(LogBufferMessage::Append(b)) => {
-                    self.buffer.lock().await.push_back(b);
+                    let mut buffer = self.buffer.lock().await;
+
+                    self.total_size += b.len();
+                    buffer.push_back(b);
+
+                    // delete old messages from the buffer
+                    while self.total_size > self.max_size {
+                        if let Some(old) = buffer.pop_front() {
+                            self.total_size -= old.len();
+                        } else {
+                            break;
+                        }
+                    }
                 }
                 None => continue,
             }

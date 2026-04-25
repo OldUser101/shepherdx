@@ -8,8 +8,6 @@ use tracing::{debug, error};
 
 use crate::buffer::LogBufferHandle;
 
-const HOPPER_BUF_SIZE: usize = 65536;
-
 /// forward raw mqtt messages to websockets
 pub async fn dispatch_mqtt_message(
     sender: broadcast::Sender<(String, Bytes)>,
@@ -37,11 +35,12 @@ pub fn dispatch_log_messages(
     log_handle: LogBufferHandle,
     log_pipe: Pipe,
     topic: String,
+    buf_size: usize,
 ) -> Result<()> {
-    let mut buf = BytesMut::with_capacity(HOPPER_BUF_SIZE);
+    let mut buf = BytesMut::with_capacity(buf_size);
 
     loop {
-        buf.resize(HOPPER_BUF_SIZE, 0);
+        buf.resize(buf_size, 0);
 
         match log_pipe.read(&mut buf) {
             Ok(n) => {
@@ -61,12 +60,13 @@ pub fn dispatch_images(
     camera_pipe: Pipe,
     sender: watch::Sender<(String, Bytes)>,
     topic: String,
+    buf_size: usize,
 ) -> Result<()> {
     let mut buf = BytesMut::new();
 
     loop {
-        let mut cbuf = BytesMut::with_capacity(HOPPER_BUF_SIZE);
-        cbuf.resize(HOPPER_BUF_SIZE, 0);
+        let mut cbuf = BytesMut::with_capacity(buf_size);
+        cbuf.resize(buf_size, 0);
 
         match camera_pipe.read(&mut cbuf) {
             Ok(n) => {
