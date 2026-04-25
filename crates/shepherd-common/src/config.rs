@@ -100,6 +100,8 @@ pub struct RunConfig {
     pub gpio_device: String,
     #[serde(default = "default_run_comp_timeout")]
     pub comp_timeout: u64,
+    #[serde(default = "default_run_reset_script")]
+    pub reset_script: PathBuf,
 }
 
 fn default_run_service_id() -> String {
@@ -114,6 +116,9 @@ fn default_run_gpio_device() -> String {
 fn default_run_comp_timeout() -> u64 {
     10
 }
+fn default_run_reset_script() -> PathBuf {
+    PathBuf::from("/usr/local/bin/robot_reset.sh")
+}
 
 impl Default for RunConfig {
     fn default() -> Self {
@@ -122,6 +127,7 @@ impl Default for RunConfig {
             start_button: default_run_start_button(),
             gpio_device: default_run_gpio_device(),
             comp_timeout: default_run_comp_timeout(),
+            reset_script: default_run_reset_script(),
         }
     }
 }

@@ -8,10 +8,11 @@ use shepherd_mqtt::{
 };
 use tokio::{
     fs,
+    process::Command,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
 use tokio_gpiod::{Bias, Chip, EdgeDetect, Input, Lines, Options};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::usercode::{Usercode, UsercodeHandle};
 
@@ -55,7 +56,20 @@ impl Runner {
     async fn reset_state(&mut self) {
         self.target_mode = Mode::Dev;
         self.target_zone = Zone::from_id(0);
-        // TODO: reset hardware here (shell script?)
+
+        // spawn hardware reset script
+        match Command::new(&self.config.run.reset_script).spawn() {
+            Ok(mut child) => match child.wait().await {
+                Ok(status) if !status.success() => {
+                    warn!("reset script exited with status {:?}", status)
+                }
+                Err(e) => warn!("failed to wait on reset script: {e}"),
+                Ok(_) => {}
+            },
+            Err(e) => {
+                error!("failed to run robot reset script: {e}");
+            }
+        }
     }
 
     /// Copy start image to temporary location for websockets

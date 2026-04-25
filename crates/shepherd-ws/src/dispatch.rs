@@ -1,7 +1,8 @@
 use anyhow::Result;
 use bytes::{Bytes, BytesMut};
 use hopper::Pipe;
-use shepherd_mqtt::messages::{ControlMessage, ControlMessageType};
+use shepherd_common::RunState;
+use shepherd_mqtt::messages::RunStatusMessage;
 use tokio::sync::{broadcast, watch};
 use tracing::{debug, error};
 
@@ -14,12 +15,12 @@ pub async fn dispatch_mqtt_message(
     sender: broadcast::Sender<(String, Bytes)>,
     log_handle: LogBufferHandle,
     topic: String,
-    robot_control: String,
+    shepherd_run_status: String,
     msg: Bytes,
 ) -> Result<()> {
-    if topic == robot_control
-        && let Ok(msg) = serde_json::from_slice::<ControlMessage>(&msg)
-        && msg._type == ControlMessageType::Reset
+    if topic == shepherd_run_status
+        && let Ok(msg) = serde_json::from_slice::<RunStatusMessage>(&msg)
+        && msg.state == RunState::Ready
     {
         // clear logs when reset message received
         let _ = log_handle.clear();
