@@ -117,7 +117,7 @@ fn default_run_comp_timeout() -> u64 {
     10
 }
 fn default_run_reset_script() -> PathBuf {
-    PathBuf::from("/usr/local/bin/robot_reset.sh")
+    PathBuf::from("/usr/local/bin/robot_reset.py")
 }
 
 impl Default for RunConfig {
