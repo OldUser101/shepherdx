@@ -27,9 +27,10 @@
 
 # `shepherd-ws`
 
-- [ ] handle incoming connections as subscriptions to mqtt topics
-- [ ] handle removal of websocket connections
-- [ ] hopper for usercode logs and camera
-- [ ] usercode log and camera message buffering
+- [x] handle incoming connections as subscriptions to mqtt topics
+- [x] handle removal of websocket connections
+- [x] hopper for usercode logs and camera
+- [x] usercode log and camera message buffering
+- [ ] send buffered logs to new websocket clients
 - [ ] initial image loading for camera
 
