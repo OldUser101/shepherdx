@@ -41,7 +41,7 @@ async fn _main(config: Config) -> Result<()> {
     let (mut log_buffer, log_handle) = LogBuffer::new(buffer::LOG_BUFFER_CAPACITY);
 
     let (mut mqtt_client, mut mqtt_event_loop) = MqttClient::new(
-        &config.run.service_id,
+        &config.ws.service_id,
         &config.mqtt.broker,
         config.mqtt.port,
     );

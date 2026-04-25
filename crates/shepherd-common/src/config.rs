@@ -114,7 +114,7 @@ fn default_run_gpio_device() -> String {
     "gpiochip0".to_string()
 }
 fn default_run_comp_timeout() -> u64 {
-    10
+    180
 }
 fn default_run_reset_script() -> PathBuf {
     PathBuf::from("/usr/local/bin/robot_reset.py")

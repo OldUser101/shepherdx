@@ -13,7 +13,7 @@ use tracing::debug;
 #[derive(Debug, Serialize, Deserialize)]
 struct ControlMessage {
     mode: Mode,
-    zone: Zone,
+    zone: u32,
 }
 
 enum UsercodeMessage {
@@ -147,7 +147,7 @@ impl Usercode {
                             timeout = None;
                         },
                         UsercodeMessage::SendStartInfo(mode, zone) => {
-                            let msg = ControlMessage { mode, zone };
+                            let msg = ControlMessage { mode, zone: zone.to_id() };
                             let msg = serde_json::to_vec(&msg)?;
                             self.start_pipe.write(msg.as_slice())?;
                             debug!("SendStartInfo( {:?}, {:?} )", mode, zone);
@@ -192,6 +192,14 @@ impl Usercode {
                     }
                 }
             }
+        }
+    }
+}
+
+impl Drop for Usercode {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.usercode.take() {
+            tokio::spawn(async move { child.kill().await });
         }
     }
 }

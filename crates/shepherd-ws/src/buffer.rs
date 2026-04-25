@@ -35,7 +35,7 @@ impl LogBufferHandle {
     pub async fn current_log(&self) -> Vec<Bytes> {
         let mut v = Vec::new();
 
-        for b in self.buffer.lock().await.iter().rev() {
+        for b in self.buffer.lock().await.iter() {
             v.push(b.clone());
         }
 
