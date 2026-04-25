@@ -69,7 +69,7 @@ impl LogBuffer {
         loop {
             match self.rx.recv().await {
                 Some(LogBufferMessage::Clear) => {
-                    self.buffer.lock().await.clear();
+                    self.buffer.lock().await.truncate(0);
                     debug!("cleared current log buffer");
                 }
                 Some(LogBufferMessage::Append(b)) => {
