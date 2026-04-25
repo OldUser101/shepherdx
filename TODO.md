@@ -6,7 +6,8 @@
 
 # `shepherd-common`
 
-- [ ] fully centralised configuration, partial impl.
+- [x] fully centralised configuration
+- [x] common config and argument parsing
 
 # `shepherd-mqtt`
 
@@ -20,8 +21,8 @@
 - [x] handles events from mqtt
 - [x] sets up hopper for usercode (log + start)
 - [x] copies initial image to tmp
-- [ ] hardware reset, probably via external scripting?
-- [ ] usercode setup and management, impl. needs extensive testing
+- [x] hardware reset, probably via external scripting?
+- [x] usercode setup and management
 - [x] sending start info to usercode via hopper
 - [x] internal usercode state tracking
 
