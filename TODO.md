@@ -17,7 +17,7 @@
 
 # `shepherd-run`
 
-- [ ] handles events from gpio (start button), impl. untested
+- [x] handles events from gpio (start button)
 - [x] handles events from mqtt
 - [x] sets up hopper for usercode (log + start)
 - [x] copies initial image to tmp
